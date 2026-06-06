@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
+// import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
 // Config configuration
 const firebaseConfig = {
@@ -19,10 +19,10 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 // NEW: ACTIVATE PUBLIC ATTIDUDINAL APP CHECK CHECKSUM GATE
-const appCheck = initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider('6LeQHRAtAAAAAJMGvjg5CxEiVJ_9MTspWKvkVCeu'),
-    isTokenAutoRefreshEnabled: true // Automatically updates token keys invisibly mid-game session
-});
+// const appCheck = initializeAppCheck(app, {
+//     provider: new ReCaptchaV3Provider('6LeQHRAtAAAAAJMGvjg5CxEiVJ_9MTspWKvkVCeu'),
+//     isTokenAutoRefreshEnabled: true // Automatically updates token keys invisibly mid-game session
+// });
 
 let map, guessMarker, mlyViewer;
 let currentRoomId = "";
