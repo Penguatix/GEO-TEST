@@ -1,0 +1,503 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: #111;
+}
+
+/* ==========================================================================
+   UPGRADE: CYBER-BATTLE LOBBY INTERFACE THEME
+   ========================================================================== */
+#menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    /* Deep carbon grid background mix */
+    background: radial-gradient(circle at center, #1a2230 0%, #0d1117 100%);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: opacity 0.4s ease, visibility 0.4s ease;
+}
+
+.menu-card {
+    background: #161b22; /* Matte dark chassis color */
+    padding: 45px;
+    border-radius: 20px;
+    border: 2px solid #30363d; /* Steel frame borders */
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 
+                0 0 30px rgba(0, 230, 118, 0.05); /* Subtle emerald ambient glow */
+    text-align: center;
+    max-width: 540px; /* UPGRADED: Widened from 480px to prevent title text wrapping */
+    width: 92%;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Accent lighting line on top of the menu card */
+.menu-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: linear-gradient(90deg, #00e676, #00b0ff); /* Synchronized energy gradient */
+}
+
+.menu-card h1 {
+    font-size: 2.1rem; /* UPGRADED: Slightly optimized down from 2.4rem to lock text on one line */
+    font-weight: 900;
+    color: #ffffff;
+    margin-bottom: 8px;
+    letter-spacing: 2px;
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+    white-space: nowrap; /* FIXED: Enforces absolute zero word-wrapping */
+}
+
+.menu-subtitle {
+    color: #8b949e;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 35px;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 16px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    background: #0d1117; /* Inset dark input valley */
+    border: 2px solid #30363d;
+    color: #ffffff;
+    border-radius: 10px;
+    margin-bottom: 25px;
+    outline: none;
+    text-align: center;
+    letter-spacing: 1px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-group input:focus { 
+    border-color: #00b0ff; 
+    box-shadow: 0 0 15px rgba(0, 176, 255, 0.25);
+}
+
+.input-group input::placeholder {
+    color: #484f58;
+}
+
+.button-group {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 10px;
+}
+
+.button-group button {
+    flex: 1;
+    padding: 16px;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* Neon Green Host Button */
+#btn-create { 
+    background-color: #00e676; 
+    color: #05190e; 
+    box-shadow: 0 4px 20px rgba(0, 230, 118, 0.2);
+}
+#btn-create:hover { 
+    background-color: #1cf087; 
+    transform: translateY(-2px);
+    box-shadow: 0 6px 25px rgba(0, 230, 118, 0.4);
+}
+#btn-create:active { transform: translateY(0); }
+
+/* Neon Blue Challenger Button */
+#btn-join { 
+    background-color: #00b0ff; 
+    color: #002233; 
+    box-shadow: 0 4px 20px rgba(0, 176, 255, 0.2);
+}
+#btn-join:hover { 
+    background-color: #33c2ff; 
+    transform: translateY(-2px);
+    box-shadow: 0 6px 25px rgba(0, 176, 255, 0.4);
+}
+#btn-join:active { transform: translateY(0); }
+
+/* Matchmaking Queue Interface */
+#lobby-waiting-status {
+    margin-top: 30px;
+    border-top: 1px solid #21262d;
+    padding-top: 25px;
+}
+
+.spinner {
+    width: 44px;
+    height: 44px;
+    border: 4px solid #161b22;
+    border-top: 4px solid #ff9100; /* Amber warning tracking loop indicator */
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 20px auto;
+    box-shadow: 0 0 15px rgba(255, 145, 0, 0.15);
+}
+
+#waiting-msg { 
+    color: #c9d1d9; 
+    font-size: 0.95rem;
+    font-weight: 600; 
+    letter-spacing: 0.5px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* UPGRADE: Animated Scorecard Faceoff Screen styles */
+#battle-scorecard-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 99999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.scorecard-container {
+    background: #151a22;
+    border: 3px solid #2d3848;
+    border-radius: 20px;
+    padding: 40px;
+    width: 90%;
+    max-width: 750px;
+    text-align: center;
+    box-shadow: 0 15px 50px rgba(0,0,0,0.7);
+    color: white;
+}
+
+.round-title {
+    font-size: 1.8rem;
+    font-weight: 900;
+    letter-spacing: 3px;
+    color: #ffc107;
+    margin-bottom: 30px;
+}
+
+.battle-lanes {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 20px 0;
+    position: relative;
+    background: #1d2633;
+    padding: 30px;
+    border-radius: 12px;
+    border: 1px solid #2c3a4e;
+}
+
+.lane {
+    flex: 1;
+}
+
+.lane-header {
+    font-size: 0.85rem;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    color: #8a99ad;
+    margin-bottom: 10px;
+}
+
+.score-display {
+    font-size: 3.8rem;
+    font-weight: 900;
+    color: #00e676; /* Vibrant score neon green */
+}
+
+.score-display.enemy-txt {
+    color: #29b6f6; /* Contrasting enemy text blue */
+}
+
+.dist-display {
+    font-size: 1rem;
+    color: #a0aec0;
+    font-weight: 600;
+}
+
+.vs-center-node {
+    width: 120px;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100px;
+}
+
+.vs-vs {
+    background: #111;
+    border: 2px solid #333;
+    color: #ff4081;
+    font-weight: 900;
+    font-size: 1.2rem;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 5;
+}
+
+/* Kinetic Shifting Projectile Laser Node */
+.projectile {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: #ff1744;
+    border-radius: 50%;
+    box-shadow: 0 0 15px #ff1744, 0 0 30px #ff1744;
+    z-index: 4;
+    display: none;
+}
+
+/* CSS Keyframes for Combat Drainage Shots */
+@keyframes fireRight {
+    0% { left: 10%; transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); }
+    100% { left: 90%; transform: scale(0.6); opacity: 0; }
+}
+
+@keyframes fireLeft {
+    0% { left: 90%; transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); }
+    100% { left: 10%; transform: scale(0.6); opacity: 0; }
+}
+
+/* Shake effect for when card gets smashed by the damage point node */
+@keyframes cardHurtShake {
+    0% { transform: translate(0, 0); }
+    20% { transform: translate(-8px, 4px); }
+    40% { transform: translate(8px, -4px); }
+    60% { transform: translate(-6px, -2px); }
+    80% { transform: translate(6px, 2px); }
+    100% { transform: translate(0, 0); }
+}
+
+.hurt-shake {
+    animation: cardHurtShake 0.4s ease-in-out;
+}
+
+.narrative-text {
+    margin-top: 25px;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.5px;
+}
+
+/* Battle HUD Layout Styling */
+#battle-hud {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 85%;
+    max-width: 800px;
+    background: rgba(0, 0, 0, 0.85);
+    border: 2px solid #333;
+    border-radius: 12px;
+    padding: 15px 25px;
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+.hp-wrapper { flex: 1; }
+.hp-label {
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 800;
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+    display: flex;
+    justify-content: space-between;
+}
+.hp-label span { color: #aaa; font-weight: 600; }
+.hp-bar-outer {
+    width: 100%;
+    height: 16px;
+    background: #222;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #444;
+}
+.hp-bar-inner {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, #28a745, #5cb85c);
+    transition: width 1.2s cubic-bezier(0.1, 1, 0.1, 1);
+}
+.hp-bar-inner.enemy-color { background: linear-gradient(90deg, #dc3545, #ec5865); }
+.vs-badge {
+    background: #ffc107;
+    color: #111;
+    font-weight: 900;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    box-shadow: 0 0 10px rgba(255,193,7,0.4);
+}
+
+/* Dashboard Panels Arrangement Layout */
+#game-container { display: flex; flex-direction: column; height: 100vh; }
+#streetview-container { flex: 1; position: relative; background: #222; }
+#mly { width: 100%; height: 100%; }
+#status-msg {
+    position: absolute;
+    bottom: 15px;
+    left: 15px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 30px;
+    z-index: 10;
+    font-size: 0.95rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    font-weight: 500;
+}
+#map-container { flex: 1; position: relative; border-top: 4px solid #111; }
+#map { width: 100%; height: 100%; }
+#btn-guess {
+    position: absolute;
+    bottom: 25px;
+    right: 25px;
+    z-index: 1000;
+    padding: 14px 28px;
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    transition: transform 0.1s;
+}
+#btn-guess:hover:not(:disabled) { background-color: #218838; }
+#btn-guess:active:not(:disabled) { transform: scale(0.98); }
+#btn-guess:disabled { background: #6c757d; box-shadow: none; cursor: not-allowed; }
+
+/* BATTLE UPDATE: Floating Damage Numbers & Local HP Counter Tickers CSS Styles */
+.hp-damage-pop {
+    height: 30px;
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: #ff1744;
+    text-shadow: 0 0 10px rgba(255, 23, 68, 0.6);
+    margin-bottom: 5px;
+    opacity: 0;
+    transform: translateY(10px);
+}
+
+.card-hp-ticker {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin-top: 10px;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 4px 10px;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+/* Splash combat kinetic burst animation keyframe */
+@keyframes damagePopupFloat {
+    0% { opacity: 0; transform: scale(0.5) translateY(15px); }
+    25% { opacity: 1; transform: scale(1.3) translateY(-5px); }
+    50% { transform: scale(1) translateY(-8px); }
+    80% { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-20px); }
+}
+
+.animate-damage-pop {
+    animation: damagePopupFloat 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* ==========================================================================
+   BATTLE UPDATE: SYNCHRONIZED MULTIPLAYER SKIP VOTING INTERFACE
+   ========================================================================== */
+#skip-hud {
+    position: absolute;
+    top: 95px; /* Floats perfectly below the main Battle HP HUD container */
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(21, 26, 34, 0.95);
+    border: 2px solid #ff9100; /* Distinct amber hazard warning border glow */
+    border-radius: 8px;
+    padding: 8px 18px;
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+}
+
+#btn-vote-skip {
+    background: #ff9100;
+    color: #111;
+    border: none;
+    padding: 8px 14px;
+    font-weight: 800;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+}
+
+#btn-vote-skip:hover:not(:disabled) {
+    background: #ffaa33;
+}
+
+#btn-vote-skip:active:not(:disabled) {
+    transform: scale(0.97);
+}
+
+#btn-vote-skip:disabled {
+    background: #3a2a18;
+    color: #71583e;
+    cursor: not-allowed;
+}
+
+#skip-vote-counter {
+    color: #ff9100;
+    font-weight: 900;
+    font-size: 0.95rem;
+    font-family: monospace;
+    letter-spacing: 0.5px;
+}

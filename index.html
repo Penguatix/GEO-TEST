@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GEO-CONQUEROR: Battle Edition</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.css" rel="stylesheet" />
+</head>
+<body>
+
+    <div id="menu-overlay">
+        <div class="menu-card">
+            <h1>🌐 GEO-CONQUEROR</h1>
+            <p class="menu-subtitle">Multiplayer Open-Source Geography Engine</p>
+            
+            <div class="input-group">
+                <input type="text" id="room-input" placeholder="Enter a Room ID (e.g. test123)">
+            </div>
+            
+            <div class="button-group">
+                <button id="btn-create" onclick="createRoom()">👑 Create Room</button>
+                <button id="btn-join" onclick="joinRoom()">⚔️ Join Match</button>
+            </div>
+            
+            <div id="lobby-waiting-status" style="display: none;">
+                <div class="spinner"></div>
+                <p id="waiting-msg">Waiting for an opponent to join your room...</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="battle-scorecard-overlay" style="display: none;">
+        <div class="scorecard-container">
+            <h2 class="round-title">ROUND RESULTS</h2>
+            <div class="battle-lanes">
+                <div class="lane my-lane">
+                    <div class="lane-header">YOUR GUESS</div>
+                    <div id="card-my-score" class="score-display">0</div>
+                    <div id="my-damage-pop" class="hp-damage-pop"></div>
+                    <div id="card-my-dist" class="dist-display">0 km away</div>
+                    <div id="card-my-hp-running" class="card-hp-ticker">HP: 5000</div>
+                </div>
+                
+                <div class="vs-center-node">
+                    <div class="vs-vs">VS</div>
+                    <div id="damage-projectile" class="projectile"></div>
+                </div>
+
+                <div class="lane enemy-lane">
+                    <div class="lane-header">ENEMY GUESS</div>
+                    <div id="card-enemy-score" class="score-display enemy-txt">0</div>
+                    <div id="enemy-damage-pop" class="hp-damage-pop"></div>
+                    <div id="card-enemy-dist" class="dist-display">0 km away</div>
+                    <div id="card-enemy-hp-running" class="card-hp-ticker">HP: 5000</div>
+                </div>
+            </div>
+            <div id="combat-narrative" class="narrative-text">Evaluating accuracy...</div>
+        </div>
+    </div>
+
+    <div id="game-container">
+        <div id="streetview-container">
+            <div id="mly"></div> 
+
+            <div id="battle-hud" style="display: none;">
+                <div class="hp-wrapper player-side">
+                    <div class="hp-label">YOUR HEALTH <span id="my-hp-text">5000 / 5000</span></div>
+                    <div class="hp-bar-outer"><div id="my-hp-bar" class="hp-bar-inner"></div></div>
+                </div>
+                <div class="vs-badge">VS</div>
+                <div class="hp-wrapper enemy-side">
+                    <div class="hp-label">ENEMY HEALTH <span id="enemy-hp-text">5000 / 5000</span></div>
+                    <div class="hp-bar-outer"><div id="enemy-hp-bar" class="hp-bar-inner enemy-color"></div></div>
+                </div>
+            </div>
+
+            <div id="skip-hud" style="display: none;">
+                <button id="btn-vote-skip" onclick="voteToSkipLocation()">🔄 Vote to Skip Location</button>
+                <span id="skip-vote-counter">Votes: 0 / 2</span>
+            </div>
+
+            <div id="status-msg">Welcome! Setup a lobby room to begin playing.</div>
+        </div>
+
+        <div id="map-container">
+            <div id="map"></div>
+            <button id="btn-guess" onclick="submitGuess()" disabled>Submit Guess</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
