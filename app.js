@@ -1,8 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-// import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
-// Config configuration
+// 1. Define configuration FIRST
 const firebaseConfig = {
     apiKey: "AIzaSyAvbpQ5r3Ikfndjs7cme5MTTvPVslk6kjI",
     authDomain: "geotest-51bdf.firebaseapp.com",
@@ -14,23 +14,36 @@ const firebaseConfig = {
     measurementId: "G-W72KKW2020"
 };
 
-// Initialize Firebase
+// 2. Initialize App and Database SECOND
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+const auth = getAuth(app);
+
+// 3. Trigger Anonymous Authentication
+signInAnonymously(auth)
+    .then(() => {
+        console.log("Player identified anonymously.");
+    })
+    .catch((error) => {
+        console.error("Auth error:", error);
+    });
+
+// 4. Continue with your variables and game setup...
+let map, guessMarker, mlyViewer;
+let currentRoomId = "";
+let playerId = "player_" + Math.floor(Math.random() * 1000); 
+let selectedCoords = null;
+let actualCoords = null;
+let resultsLayers = []; 
+let isHost = false; 
+
+// import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
 // NEW: ACTIVATE PUBLIC ATTIDUDINAL APP CHECK CHECKSUM GATE
 // const appCheck = initializeAppCheck(app, {
 //     provider: new ReCaptchaV3Provider('6LeQHRAtAAAAAJMGvjg5CxEiVJ_9MTspWKvkVCeu'),
 //     isTokenAutoRefreshEnabled: true // Automatically updates token keys invisibly mid-game session
 // });
-
-let map, guessMarker, mlyViewer;
-let currentRoomId = "";
-let playerId = "player_" + Math.floor(Math.random() * 1000); // Simple random ID for testing
-let selectedCoords = null;
-let actualCoords = null;
-let resultsLayers = []; // Tracking container to clear lines/pins on new rounds
-let isHost = false; // Flag to trace who runs global HP drainage updates
 
 // Pool of global location metrics
 const gameLocations = [
