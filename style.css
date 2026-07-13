@@ -23,7 +23,7 @@ body, html {
     height: 100%;
     /* Deep carbon grid background mix */
     background: radial-gradient(circle at center, #1a2230 0%, #0d1117 100%);
-    z-index: 9999;
+    z-index: 9999999; /* FIXED: Elevated to blackout map clicks */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -455,7 +455,7 @@ body, html {
 #skip-hud {
     position: absolute;
     top: 95px; 
-    left: 20px; /* FIXED: Snapped nicely to the left border to avoid blocking */
+    left: 20px; /* Snapped nicely to the left border to avoid blocking */
     background: rgba(21, 26, 34, 0.95);
     border: 2px solid #ff9100; 
     border-radius: 30px; /* Default Pill form representation */
@@ -619,8 +619,8 @@ body, html {
     /* Mount floating trigger handler tab link directly above console feeds */
     #btn-map-toggle {
         display: block !important;
-        position: absolute !important;
-        bottom: 60px !important;
+        position: fixed !important; /* FIXED: Anchors perfectly to viewport */
+        bottom: 85px !important; /* FIXED: Shifted significantly up to avoid overlapping the Submit Guess button */
         right: 15px !important;
         z-index: 10000 !important; /* Elevated over everything */
         padding: 10px 18px !important;
@@ -632,6 +632,13 @@ body, html {
         font-size: 0.85rem !important;
         cursor: pointer !important;
         box-shadow: 0 4px 15px rgba(0,0,0,0.4) !important;
+    }
+
+    /* FIXED: Prevent next round button from blocking the enemy HP Bar */
+    .global-next-round-btn {
+        top: 75px !important; 
+        right: 15px !important; 
+        z-index: 10000 !important; 
     }
 
     #btn-guess {
@@ -663,12 +670,24 @@ body, html {
     }
     #btn-vote-skip { padding: 4px 8px !important; font-size: 0.65rem !important; }
 
+    /* SCORECARD DYNAMIC SCALING FOR MOBILE (HORIZONTAL PRESERVATION) */
+    .scorecard-container { padding: 25px 15px !important; width: 95% !important; }
+    .round-title { font-size: 1.4rem !important; margin-bottom: 15px !important; }
+    
     .battle-lanes {
-        flex-direction: column !important;
-        gap: 15px !important;
+        flex-direction: row !important; /* FIXED: Restored horizontal flow for laser animation */
+        gap: 5px !important;
+        padding: 15px 10px !important;
     }
-    .vs-center-node { height: 40px !important; }
-    .score-display { font-size: 2.2rem !important; }
+    
+    .lane-header { font-size: 0.65rem !important; margin-bottom: 5px !important; }
+    .score-display { font-size: 1.8rem !important; }
+    .dist-display { font-size: 0.75rem !important; }
+    .card-hp-ticker { font-size: 0.8rem !important; padding: 3px 6px !important; margin-top: 5px !important; }
+    .vs-center-node { width: 50px !important; height: 50px !important; }
+    .vs-vs { width: 35px !important; height: 35px !important; font-size: 0.9rem !important; }
+    .projectile { width: 12px !important; height: 12px !important; }
+    .narrative-text { font-size: 0.9rem !important; }
 }
 
 /* ==========================================================================

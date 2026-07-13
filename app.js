@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getDatabase, ref, set, onValue, update, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import { getDatabase, ref, set, onValue, update, serverTimestamp, get } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
@@ -18,9 +18,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 
-signInAnonymously(auth)
-    .then(() => { console.log("Player identified anonymously."); })
-    .catch((error) => { console.error("Auth error:", error); });
+signInAnonymously(auth).catch((error) => { console.error("Auth error:", error); });
 
 const appCheck = initializeAppCheck(app, {
     provider: new ReCaptchaV3Provider('6LeQHRAtAAAAAJMGvjg5CxEiVJ_9MTspWKvkVCeu'),
@@ -44,9 +42,15 @@ let selectedCoords = null;
 let actualCoords = null;
 let resultsLayers = []; 
 let isHost = false; 
+
+// CRITICAL FIX: Trackers for clean resets
 let countdownInterval = null;
+let resultsInterval = null;
+let roomListenerUnsubscribe = null; 
+
 let localPanicTriggered = false;
 let hasGuessed = false;
+let loadedTargetName = ""; 
 
 function initMap() {
     map = L.map('map').setView([20, 0], 2);
@@ -74,14 +78,11 @@ function showNotification(message, duration = 4000) {
         container.id = 'toast-container';
         document.body.appendChild(container);
     }
-
     const toast = document.createElement('div');
     toast.className = 'custom-toast';
     toast.innerHTML = `<span class="toast-icon">📢</span><span class="toast-text">${message}</span>`;
-    
     container.appendChild(toast);
     setTimeout(() => { toast.classList.add('toast-visible'); }, 50);
-
     setTimeout(() => {
         toast.classList.remove('toast-visible');
         toast.classList.add('toast-exit');
@@ -89,9 +90,62 @@ function showNotification(message, duration = 4000) {
     }, duration);
 }
 
+// CRITICAL FIX: Engine to completely flush all active states and background ghost hooks before any new session
+function resetLocalGameState() {
+    if (roomListenerUnsubscribe) {
+        roomListenerUnsubscribe();
+        roomListenerUnsubscribe = null;
+    }
+    if (countdownInterval) clearInterval(countdownInterval);
+    if (resultsInterval) clearInterval(resultsInterval);
+    
+    if (resultsLayers) {
+        resultsLayers.forEach(layer => map.removeLayer(layer));
+        resultsLayers = [];
+    }
+    if (guessMarker) {
+        map.removeLayer(guessMarker);
+        guessMarker = null;
+    }
+    
+    selectedCoords = null;
+    hasGuessed = false;
+    localPanicTriggered = false;
+    loadedTargetName = "";
+    
+    document.body.classList.remove('panic-flash', 'screen-shake');
+    
+    const guessBtn = document.getElementById('btn-guess');
+    if (guessBtn) {
+        guessBtn.disabled = true;
+        guessBtn.removeAttribute('data-submitted');
+        guessBtn.innerText = "Submit Guess";
+    }
+
+    const nextBtnCheck = document.getElementById('btn-next-round');
+    if (nextBtnCheck) nextBtnCheck.style.display = 'none';
+
+    const scorecardOverlay = document.getElementById('battle-scorecard-overlay');
+    if (scorecardOverlay) scorecardOverlay.style.display = 'none';
+    
+    document.getElementById('lobby-waiting-status').style.display = 'none';
+    
+    const skipHud = document.getElementById('skip-hud');
+    if (skipHud) {
+        skipHud.classList.remove('skip-expanded');
+        skipHud.classList.add('skip-collapsed');
+        const compact = document.getElementById('skip-compact');
+        const full = document.getElementById('skip-full');
+        if (compact) compact.style.display = 'block';
+        if (full) full.style.display = 'none';
+    }
+}
+
 window.createRoom = function() {
     const roomId = document.getElementById('room-input').value.trim();
     if (!roomId) return alert("Please enter a Room ID");
+    
+    resetLocalGameState(); // Flush completely before creating
     
     currentRoomId = roomId;
     isHost = true; 
@@ -122,12 +176,19 @@ window.joinRoom = function() {
     const roomId = document.getElementById('room-input').value.trim();
     if (!roomId) return alert("Please enter a Room ID");
     
+    resetLocalGameState(); // Flush completely before joining
+    
     currentRoomId = roomId;
     isHost = false;
 
-    onValue(ref(db, 'rooms/' + roomId), (snapshot) => {
+    // Use a static 'get' call instead of onValue so we don't accidentally leave dangling listeners
+    get(ref(db, 'rooms/' + roomId)).then((snapshot) => {
         const data = snapshot.val();
-        if (!data || data.gameState !== "waiting") return;
+        if (!data || data.gameState !== "waiting") {
+            alert("Room not found or game already in progress!");
+            document.getElementById('lobby-waiting-status').style.display = 'none';
+            return;
+        }
 
         const updates = {};
         updates[`rooms/${roomId}/gameState`] = "playing";
@@ -140,13 +201,15 @@ window.joinRoom = function() {
         update(ref(db), updates).then(() => {
             listenToRoom(roomId);
         });
-    }, { onlyOnce: true });
+    }).catch(err => {
+        console.error(err);
+    });
 }
 
-let loadedTargetName = ""; 
-
 function listenToRoom(roomId) {
-    onValue(ref(db, 'rooms/' + roomId), (snapshot) => {
+    if (roomListenerUnsubscribe) roomListenerUnsubscribe(); // Strip dead listeners prior to attachment
+    
+    roomListenerUnsubscribe = onValue(ref(db, 'rooms/' + roomId), (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
 
@@ -169,7 +232,6 @@ function listenToRoom(roomId) {
             document.getElementById('skip-hud').style.display = 'flex'; 
             const currentVotesCount = data.skipVotes ? Object.keys(data.skipVotes).length : 0;
             
-            // Map live string updates sequentially to both container views
             const counterFull = document.getElementById('skip-vote-counter');
             if (counterFull) counterFull.innerText = `${currentVotesCount}/2`;
             
@@ -236,7 +298,6 @@ function listenToRoom(roomId) {
                 const nextBtnCheck = document.getElementById('btn-next-round');
                 if (nextBtnCheck) nextBtnCheck.style.display = 'none';
                 
-                // Force pill closure cleanly whenever a brand new round spawns
                 const skipHud = document.getElementById('skip-hud');
                 if (skipHud) {
                     skipHud.classList.remove('skip-expanded');
@@ -365,7 +426,6 @@ function listenToRoom(roomId) {
     });
 }
 
-// Collapsible Skip Hud Controller Function
 window.toggleSkipHud = function(e) {
     const hud = document.getElementById('skip-hud');
     if (!hud) return;
@@ -523,14 +583,17 @@ function renderVisualResultsOnly(roomData, guesses) {
 
     let currentTick = 0;
     const tickDuration = 40; 
-    const interval = setInterval(() => {
+    
+    // Setup global variable to capture this explicit loop cleanly
+    if(resultsInterval) clearInterval(resultsInterval);
+    resultsInterval = setInterval(() => {
         currentTick++;
         const ratio = currentTick / tickDuration;
         document.getElementById('card-my-score').innerText = Math.round(myScore * ratio);
         document.getElementById('card-enemy-score').innerText = Math.round(enemyScore * ratio);
 
         if (currentTick >= tickDuration) {
-            clearInterval(interval);
+            clearInterval(resultsInterval);
             triggerLaserProjectileCombatAnimation(myScore, enemyScore, startMyHp, finalMyHp, startEnemyHp, finalEnemyHp);
         }
     }, 25);
@@ -667,6 +730,12 @@ function triggerFinalMatchOverOverlayScreen(didIWin) {
     } else {
         titleNode.innerHTML = "💀 MATCH DEFEAT";
         subNode.innerHTML = `<span style="color:#ff1744; font-weight:bold;">ELIMINATED!</span> Barriers flattened.`;
+    }
+
+    // CRITICAL FIX: Teardown ghost room hooks completely when dumped out to the ending menu.
+    if (roomListenerUnsubscribe) {
+        roomListenerUnsubscribe();
+        roomListenerUnsubscribe = null;
     }
 }
 
