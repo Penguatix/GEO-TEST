@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GEO-TEST: Battle Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GEO TEST: Battle Edition</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="style.css">
     <link href="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.css" rel="stylesheet" />
@@ -12,21 +12,21 @@
 
     <div id="menu-overlay">
         <div class="menu-card">
-            <h1>🌐 GEO-TEST</h1>
-            <p class="menu-subtitle">Multiplayer Open-Source Geography Engine</p>
+            <h1>🌐 GEO TEST</h1>
+            <p class="menu-subtitle">Multiplayer Geography Engine</p>
             
             <div class="input-group">
-                <input type="text" id="room-input" placeholder="Enter a Room ID (e.g. test123)">
+                <input type="text" id="room-input" placeholder="Enter Room ID">
             </div>
             
             <div class="button-group">
-                <button id="btn-create" onclick="createRoom()">👑 Create Room</button>
-                <button id="btn-join" onclick="joinRoom()">⚔️ Join Match</button>
+                <button id="btn-create" onclick="createRoom()">👑 Create</button>
+                <button id="btn-join" onclick="joinRoom()">⚔️ Join</button>
             </div>
             
             <div id="lobby-waiting-status" style="display: none;">
                 <div class="spinner"></div>
-                <p id="waiting-msg">Waiting for an opponent to join your room...</p>
+                <p id="waiting-msg">Waiting for opponent...</p>
             </div>
         </div>
     </div>
@@ -66,22 +66,34 @@
 
             <div id="battle-hud" style="display: none;">
                 <div class="hp-wrapper player-side">
-                    <div class="hp-label">YOUR HEALTH <span id="my-hp-text">5000 / 5000</span></div>
+                    <div class="hp-label">YOU <span id="my-hp-text">5000/5000</span></div>
                     <div class="hp-bar-outer"><div id="my-hp-bar" class="hp-bar-inner"></div></div>
                 </div>
-                <div class="vs-badge">VS</div>
+                
+                <div id="timer-hud" style="display: none;">
+                    <div id="timer-clock">60s</div>
+                </div>
+                
                 <div class="hp-wrapper enemy-side">
-                    <div class="hp-label">ENEMY HEALTH <span id="enemy-hp-text">5000 / 5000</span></div>
+                    <div class="hp-label">ENEMY <span id="enemy-hp-text">5000/5000</span></div>
                     <div class="hp-bar-outer"><div id="enemy-hp-bar" class="hp-bar-inner enemy-color"></div></div>
                 </div>
             </div>
 
-            <div id="skip-hud" style="display: none;">
-                <button id="btn-vote-skip" onclick="voteToSkipLocation()">🔄 Vote to Skip Location</button>
-                <span id="skip-vote-counter">Votes: 0 / 2</span>
+            <!-- UPGRADED COLLAPSIBLE SKIP HUD WIDGET -->
+            <div id="skip-hud" class="skip-collapsed" style="display: none;" onclick="toggleSkipHud(event)">
+                <div id="skip-compact">
+                    ⏭️ Skip <span id="skip-vote-counter-small">0/2</span>
+                </div>
+                <div id="skip-full" style="display: none;">
+                    <button id="btn-vote-skip" onclick="voteToSkipLocation(); event.stopPropagation();">🔄 Vote to Skip</button>
+                    <span id="skip-vote-counter">0/2</span>
+                </div>
             </div>
 
-            <div id="status-msg">Welcome! Setup a lobby room to begin playing.</div>
+            <button id="btn-map-toggle" onclick="toggleMobileMapDrawer()">🗺️ Toggle Map</button>
+
+            <div id="status-msg">Setup a lobby room to begin playing.</div>
         </div>
 
         <div id="map-container">

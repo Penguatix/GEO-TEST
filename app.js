@@ -1,8 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import { getDatabase, ref, set, onValue, update, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
-// 1. Define configuration FIRST
 const firebaseConfig = {
     apiKey: "AIzaSyAvbpQ5r3Ikfndjs7cme5MTTvPVslk6kjI",
     authDomain: "geotest-51bdf.firebaseapp.com",
@@ -14,38 +14,19 @@ const firebaseConfig = {
     measurementId: "G-W72KKW2020"
 };
 
-// 2. Initialize App and Database SECOND
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 
-// 3. Trigger Anonymous Authentication
 signInAnonymously(auth)
-    .then(() => {
-        console.log("Player identified anonymously.");
-    })
-    .catch((error) => {
-        console.error("Auth error:", error);
-    });
+    .then(() => { console.log("Player identified anonymously."); })
+    .catch((error) => { console.error("Auth error:", error); });
 
-// 4. Continue with your variables and game setup...
-let map, guessMarker, mlyViewer;
-let currentRoomId = "";
-let playerId = "player_" + Math.floor(Math.random() * 1000); 
-let selectedCoords = null;
-let actualCoords = null;
-let resultsLayers = []; 
-let isHost = false; 
-
-import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
-
-// NEW: ACTIVATE PUBLIC ATTIDUDINAL APP CHECK CHECKSUM GATE
 const appCheck = initializeAppCheck(app, {
     provider: new ReCaptchaV3Provider('6LeQHRAtAAAAAJMGvjg5CxEiVJ_9MTspWKvkVCeu'),
-    isTokenAutoRefreshEnabled: true // Automatically updates token keys invisibly mid-game session
+    isTokenAutoRefreshEnabled: true
 });
 
-// Pool of global location metrics
 const gameLocations = [
     { name: "Rome Colosseum", lat: 41.8902, lng: 12.4922 },
     { name: "Eiffel Tower", lat: 48.8584, lng: 2.2945 },
@@ -56,11 +37,21 @@ const gameLocations = [
     { name: "Golden Gate Bridge", lat: 37.8199, lng: -122.4783 }
 ];
 
-// Initialize the free Leaflet Guess Map
+let map, guessMarker, mlyViewer;
+let currentRoomId = "";
+let playerId = "player_" + Math.floor(Math.random() * 1000); 
+let selectedCoords = null;
+let actualCoords = null;
+let resultsLayers = []; 
+let isHost = false; 
+let countdownInterval = null;
+let localPanicTriggered = false;
+let hasGuessed = false;
+
 function initMap() {
     map = L.map('map').setView([20, 0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
+        attribution: '© OpenStreetMap'
     }).addTo(map);
 
     map.on('click', function(e) {
@@ -76,7 +67,28 @@ function initMap() {
     });
 }
 
-// 1. CREATE A ROOM
+function showNotification(message, duration = 4000) {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'custom-toast';
+    toast.innerHTML = `<span class="toast-icon">📢</span><span class="toast-text">${message}</span>`;
+    
+    container.appendChild(toast);
+    setTimeout(() => { toast.classList.add('toast-visible'); }, 50);
+
+    setTimeout(() => {
+        toast.classList.remove('toast-visible');
+        toast.classList.add('toast-exit');
+        setTimeout(() => { toast.remove(); }, 400);
+    }, duration);
+}
+
 window.createRoom = function() {
     const roomId = document.getElementById('room-input').value.trim();
     if (!roomId) return alert("Please enter a Room ID");
@@ -106,7 +118,6 @@ window.createRoom = function() {
     });
 }
 
-// 2. JOIN A ROOM
 window.joinRoom = function() {
     const roomId = document.getElementById('room-input').value.trim();
     if (!roomId) return alert("Please enter a Room ID");
@@ -120,6 +131,9 @@ window.joinRoom = function() {
 
         const updates = {};
         updates[`rooms/${roomId}/gameState`] = "playing";
+        updates[`rooms/${roomId}/timerStartTime`] = serverTimestamp();
+        updates[`rooms/${roomId}/timerDuration`] = 60;
+        updates[`rooms/${roomId}/panicTriggered`] = false;
         updates[`rooms/${roomId}/playerHealths/guestId`] = playerId;
         updates[`rooms/${roomId}/playerHealths/${playerId}`] = 5000;
 
@@ -129,7 +143,6 @@ window.joinRoom = function() {
     }, { onlyOnce: true });
 }
 
-// 3. LISTEN TO LIVE MULTIPLAYER CHANGES
 let loadedTargetName = ""; 
 
 function listenToRoom(roomId) {
@@ -137,15 +150,9 @@ function listenToRoom(roomId) {
         const data = snapshot.val();
         if (!data) return;
 
-        if (data.gameState === "playing" && data.guesses && Object.keys(data.guesses).length > 0) {
-            if (Object.keys(data.guesses).length < 2) return;
-        }
-
         actualCoords = { lat: data.targetLocation.lat, lng: data.targetLocation.lng };
 
-        // Process Interactive HUD gauges ONLY on regular states
-        // FIXED CHECK: We removed short-circuit returns here so the reveal screen can process final hits!
-        if (data.gameState === "waiting" || data.gameState === "playing") {
+        if (data.gameState === "waiting" || data.gameState === "playing" || data.gameState === "revealed") {
             if (data.playerHealths && data.playerHealths.hostId) {
                 const myHp = data.playerHealths[playerId] !== undefined ? data.playerHealths[playerId] : 5000;
                 const oppId = data.playerHealths.hostId === playerId ? data.playerHealths.guestId : data.playerHealths.hostId;
@@ -158,16 +165,23 @@ function listenToRoom(roomId) {
             }
         }
 
-        // Live monitor skip ballot box counts
         if (data.gameState === "playing") {
             document.getElementById('skip-hud').style.display = 'flex'; 
             const currentVotesCount = data.skipVotes ? Object.keys(data.skipVotes).length : 0;
-            document.getElementById('skip-vote-counter').innerText = `Votes: ${currentVotesCount} / 2`;
+            
+            // Map live string updates sequentially to both container views
+            const counterFull = document.getElementById('skip-vote-counter');
+            if (counterFull) counterFull.innerText = `${currentVotesCount}/2`;
+            
+            const counterSmall = document.getElementById('skip-vote-counter-small');
+            if (counterSmall) counterSmall.innerText = `${currentVotesCount}/2`;
 
             if (data.skipVotes && data.skipVotes[playerId]) {
                 const voteBtn = document.getElementById('btn-vote-skip');
-                voteBtn.disabled = true;
-                voteBtn.innerText = "⏳ Voted to Skip";
+                if (voteBtn) {
+                    voteBtn.disabled = true;
+                    voteBtn.innerText = "⏳ Voted to Skip";
+                }
             }
 
             if (currentVotesCount === 2 && isHost) {
@@ -178,42 +192,148 @@ function listenToRoom(roomId) {
             document.getElementById('skip-hud').style.display = 'none';
         }
 
-        // STATE A: ACTIVE ROUND RUNNING
+        if (data.gameState === "playing" && data.guesses && Object.keys(data.guesses).length === 2) {
+            clearInterval(countdownInterval);
+            document.body.classList.remove('panic-flash', 'screen-shake');
+            processCombatDamageEvaluation(data);
+            return; 
+        }
+
+        if (data.gameState === "revealed" && data.guesses && Object.keys(data.guesses).length === 2) {
+            clearInterval(countdownInterval);
+            document.body.classList.remove('panic-flash', 'screen-shake');
+            renderVisualResultsOnly(data, data.guesses);
+            return; 
+        }
+
         if (data.gameState === "playing") {
             document.getElementById('menu-overlay').style.opacity = '0';
             document.getElementById('menu-overlay').style.visibility = 'hidden';
             document.getElementById('battle-scorecard-overlay').style.display = 'none'; 
             document.getElementById('battle-hud').style.display = 'flex';
+            document.getElementById('timer-hud').style.display = 'flex';
 
-            if (resultsLayers.length > 0 || document.getElementById('btn-guess').getAttribute('data-submitted') === 'true') {
-                resultsLayers.forEach(layer => map.removeLayer(layer));
-                resultsLayers = [];
+            const serverSaysIMadeAGuess = data.guesses && data.guesses[playerId] !== undefined;
+            const totalGuessesCount = data.guesses ? Object.keys(data.guesses).length : 0;
+            
+            const oppId = data.playerHealths.hostId === playerId ? data.playerHealths.guestId : data.playerHealths.hostId;
+            const opponentHasGuessed = data.guesses && oppId && data.guesses[oppId] !== undefined;
+
+            if (loadedTargetName !== data.targetLocation.name) {
+                if (resultsLayers) { resultsLayers.forEach(layer => map.removeLayer(layer)); resultsLayers = []; }
                 if (guessMarker) { map.removeLayer(guessMarker); guessMarker = null; }
                 selectedCoords = null;
+                hasGuessed = false; 
+                localPanicTriggered = false;
+                
+                document.body.classList.remove('panic-flash', 'screen-shake');
                 
                 const guessBtn = document.getElementById('btn-guess');
                 guessBtn.disabled = true;
                 guessBtn.removeAttribute('data-submitted');
+                guessBtn.innerText = "Submit Guess";
+
+                const nextBtnCheck = document.getElementById('btn-next-round');
+                if (nextBtnCheck) nextBtnCheck.style.display = 'none';
+                
+                // Force pill closure cleanly whenever a brand new round spawns
+                const skipHud = document.getElementById('skip-hud');
+                if (skipHud) {
+                    skipHud.classList.remove('skip-expanded');
+                    skipHud.classList.add('skip-collapsed');
+                    const compact = document.getElementById('skip-compact');
+                    const full = document.getElementById('skip-full');
+                    if (compact) compact.style.display = 'block';
+                    if (full) full.style.display = 'none';
+                }
             }
 
-            const nextRoundBtn = document.getElementById('btn-next-round');
-            if (nextRoundBtn) nextRoundBtn.style.display = 'none';
+            if (data.panicTriggered && !localPanicTriggered) {
+                localPanicTriggered = true; 
+                
+                if (!serverSaysIMadeAGuess) {
+                    document.body.classList.add('panic-flash', 'screen-shake');
+                    setTimeout(() => document.body.classList.remove('screen-shake'), 600);
+                    showNotification("⚠️ WARNING: Opponent has locked a guess! Timer cut down to 10s!");
+                } else {
+                    document.body.classList.remove('panic-flash', 'screen-shake');
+                    showNotification("🎯 Success: You guessed first! Opponent's timer slashed down!");
+                }
+            }
+
+            if (data.timerStartTime) {
+                clearInterval(countdownInterval);
+                countdownInterval = setInterval(() => {
+                    const elapsedSecs = Math.floor((Date.now() - data.timerStartTime) / 1000);
+                    let timeRemaining = data.timerDuration - elapsedSecs;
+
+                    if (timeRemaining <= 0) {
+                        timeRemaining = 0;
+                        clearInterval(countdownInterval);
+                        
+                        if (!hasGuessed && !serverSaysIMadeAGuess) {
+                            if (selectedCoords) {
+                                window.submitGuess();
+                            } else {
+                                submitNoGuessTimeout();
+                            }
+                        }
+                    }
+
+                    if (totalGuessesCount === 1 && !data.panicTriggered && isHost) {
+                        const timeElapsedSoFar = Math.floor((Date.now() - data.timerStartTime) / 1000);
+                        const initialRemaining = data.timerDuration - timeElapsedSoFar;
+
+                        if (initialRemaining > 10) {
+                            const newStartTime = Date.now() - ((data.timerDuration - 10) * 1000);
+                            update(ref(db, `rooms/${currentRoomId}`), {
+                                timerStartTime: newStartTime,
+                                panicTriggered: true
+                            });
+                        } else {
+                            update(ref(db, `rooms/${currentRoomId}`), { panicTriggered: true });
+                        }
+                    }
+
+                    if (hasGuessed || serverSaysIMadeAGuess) {
+                        if (!opponentHasGuessed) {
+                            document.getElementById('timer-clock').innerText = `${timeRemaining}s`;
+                            document.getElementById('status-msg').innerText = `You have locked in your guess! Opponent has not guessed yet... (${timeRemaining}s remaining)`;
+                            document.body.classList.remove('panic-flash', 'screen-shake');
+                        } else {
+                            document.getElementById('timer-clock').innerText = "⏳";
+                            document.getElementById('status-msg').innerText = "All guesses locked! Calculating battle damage results...";
+                        }
+                    } else {
+                        document.getElementById('timer-clock').innerText = `${timeRemaining}s`;
+                        if (data.panicTriggered || timeRemaining <= 10) {
+                            document.getElementById('timer-clock').style.color = '#ff1744';
+                            document.getElementById('status-msg').innerText = "⚠️ PANIC MODE: Opponent submitted! 10 seconds remaining!";
+                            
+                            if(!document.body.classList.contains('panic-flash')) {
+                                document.body.classList.add('panic-flash');
+                            }
+                        } else {
+                            document.getElementById('timer-clock').style.color = '#ff9100';
+                            document.getElementById('status-msg').innerText = "Game Active! Find the location and guess!";
+                        }
+                    }
+                }, 200);
+            }
 
             if (loadedTargetName !== data.targetLocation.name) {
                 loadedTargetName = data.targetLocation.name; 
-
                 const voteBtn = document.getElementById('btn-vote-skip');
-                voteBtn.disabled = false;
-                voteBtn.innerText = "🔄 Vote to Skip Location";
-
-                if (mlyViewer) {
-                    try { mlyViewer.remove(); } catch(e) {}
-                    mlyViewer = null;
+                if (voteBtn) {
+                    voteBtn.disabled = false;
+                    voteBtn.innerText = "🔄 Vote to Skip";
                 }
+
+                if (mlyViewer) { try { mlyViewer.remove(); } catch(e) {} mlyViewer = null; }
 
                 setTimeout(() => {
                     const fetchWithFallbackRadius = (radiusSize) => {
-                        const token = ['MLY', '27009972391994261', '636862a07870af0060407d2b511a95bf'].join('|');
+                        const token = ['MLY', '27253020047671245', '1ada96c9c41234954cb5bbe20ecc1961'].join('|');
                         const url = `https://graph.mapillary.com/images?access_token=${token}&fields=id&lat=${actualCoords.lat}&lng=${actualCoords.lng}&radius=${radiusSize}&limit=1`;
 
                         fetch(url)
@@ -222,43 +342,48 @@ function listenToRoom(roomId) {
                                 if (!result.data || result.data.length === 0) {
                                     if (radiusSize === 50) { fetchWithFallbackRadius(250); } 
                                     else if (radiusSize === 250) { fetchWithFallbackRadius(1000); } 
-                                    else { throw new Error("No available imagery found near coordinates."); }
+                                    else { throw new Error("No imagery found."); }
                                     return;
                                 }
-
                                 const targetImageId = result.data[0].id;
-                                document.getElementById('status-msg').innerText = "Game Active! Find the location and guess!";
-                                
-                                mlyViewer = new mapillary.Viewer({
-                                    container: 'mly',
-                                    accessToken: token,
-                                    imageId: targetImageId
-                                });
-                                
+                                mlyViewer = new mapillary.Viewer({ container: 'mly', accessToken: token, imageId: targetImageId });
                                 setTimeout(() => { mlyViewer.resize(); }, 50);
                             })
                             .catch(err => {
-                                console.error("Mapillary Fallback Error:", err);
-                                document.getElementById('status-msg').innerText = "Location lookup failed! Use Vote to Skip Button above.";
+                                console.error(err);
+                                document.getElementById('status-msg').innerText = "Imagery lookup failed! Use Skip Button.";
                             });
                     };
-
                     fetchWithFallbackRadius(50);
                 }, 200); 
             }
-        }
-
-        // STATE B: BOTH GUESSES COMMITTED - TRIGGER COMBAT EVALUATION (Host Only)
-        if (data.gameState === "playing" && data.guesses && Object.keys(data.guesses).length === 2) {
-            processCombatDamageEvaluation(data);
-        }
-
-        // STATE C: SCOREBOARD REVEAL CYCLE RUNNING
-        if (data.gameState === "revealed" && data.guesses && Object.keys(data.guesses).length === 2) {
-            renderVisualResultsOnly(data, data.guesses);
+        } else {
+            clearInterval(countdownInterval);
+            document.getElementById('timer-hud').style.display = 'none';
+            document.body.classList.remove('panic-flash', 'screen-shake');
         }
     });
 }
+
+// Collapsible Skip Hud Controller Function
+window.toggleSkipHud = function(e) {
+    const hud = document.getElementById('skip-hud');
+    if (!hud) return;
+    const compact = document.getElementById('skip-compact');
+    const full = document.getElementById('skip-full');
+    
+    if (hud.classList.contains('skip-collapsed')) {
+        hud.classList.remove('skip-collapsed');
+        hud.classList.add('skip-expanded');
+        if (compact) compact.style.display = 'none';
+        if (full) full.style.display = 'flex';
+    } else {
+        hud.classList.remove('skip-expanded');
+        hud.classList.add('skip-collapsed');
+        if (compact) compact.style.display = 'block';
+        if (full) full.style.display = 'none';
+    }
+};
 
 window.voteToSkipLocation = function() {
     if (!currentRoomId) return;
@@ -273,43 +398,74 @@ function executeHostSkipRelocation() {
     updates[`rooms/${currentRoomId}/targetLocation`] = nextTarget;
     updates[`rooms/${currentRoomId}/guesses`] = {}; 
     updates[`rooms/${currentRoomId}/skipVotes`] = {}; 
+    updates[`rooms/${currentRoomId}/panicTriggered`] = false;
+    updates[`rooms/${currentRoomId}/timerStartTime`] = serverTimestamp();
+    updates[`rooms/${currentRoomId}/timerDuration`] = 60;
     updates[`rooms/${currentRoomId}/gameState`] = "playing";
 
-    update(ref(db), updates).catch(err => console.error("Skip failed:", err));
+    update(ref(db), updates).catch(err => console.error(err));
 }
 
-// 4. SUBMIT GUESS TO FIREBASE
 window.submitGuess = function() {
-    if (!selectedCoords || !currentRoomId) return;
+    const targetCoords = selectedCoords || { lat: 0, lng: 0 };
+    if (!currentRoomId) return;
+
+    hasGuessed = true; 
 
     document.getElementById('btn-guess').disabled = true;
     document.getElementById('btn-guess').setAttribute('data-submitted', 'true');
+    document.getElementById('btn-guess').innerText = "Submitted Lock ✓";
     document.getElementById('status-msg').innerText = "Guess submitted! Waiting for opponent...";
+    document.body.classList.remove('panic-flash', 'screen-shake');
 
     set(ref(db, `rooms/${currentRoomId}/guesses/${playerId}`), {
-        lat: selectedCoords.lat,
-        lng: selectedCoords.lng
+        lat: targetCoords.lat,
+        lng: targetCoords.lng,
+        isTimedOut: false
+    });
+}
+
+function submitNoGuessTimeout() {
+    hasGuessed = true;
+
+    document.getElementById('btn-guess').disabled = true;
+    document.getElementById('btn-guess').setAttribute('data-submitted', 'true');
+    document.getElementById('btn-guess').innerText = "No Guess Lock ❌";
+    document.getElementById('status-msg').innerText = "Time expired! Empty choice registered...";
+    document.body.classList.remove('panic-flash', 'screen-shake');
+
+    set(ref(db, `rooms/${currentRoomId}/guesses/${playerId}`), {
+        lat: 0,
+        lng: 0,
+        isTimedOut: true
     });
 }
 
 function processCombatDamageEvaluation(roomData) {
     if (!isHost) return; 
 
-    update(ref(db), { [`rooms/${currentRoomId}/gameState`]: "processing" }).then(() => {
-        const pIds = Object.keys(roomData.guesses);
+    const roomRef = ref(db, `rooms/${currentRoomId}`);
+    update(roomRef, { gameState: "processing" }).then(() => {
+        const pIds = [roomData.playerHealths.hostId, roomData.playerHealths.guestId];
         const playerScores = {};
 
         pIds.forEach(id => {
-            const guess = roomData.guesses[id];
-            const dist = calculateHaversineDistance(guess.lat, guess.lng, roomData.targetLocation.lat, roomData.targetLocation.lng);
-            playerScores[id] = computeGeoGuessrScore(dist);
+            if (!id) return;
+            const guess = roomData.guesses ? roomData.guesses[id] : null;
+            
+            if (!guess || guess.isTimedOut === true) {
+                playerScores[id] = 0;
+            } else {
+                const dist = calculateHaversineDistance(guess.lat, guess.lng, roomData.targetLocation.lat, roomData.targetLocation.lng);
+                playerScores[id] = computeGeoGuessrScore(dist);
+            }
         });
 
         const p1 = pIds[0];
         const p2 = pIds[1];
         
-        let currentHp1 = roomData.playerHealths[p1];
-        let currentHp2 = roomData.playerHealths[p2];
+        let currentHp1 = (roomData.playerHealths && roomData.playerHealths[p1] !== undefined) ? roomData.playerHealths[p1] : 5000;
+        let currentHp2 = (roomData.playerHealths && roomData.playerHealths[p2] !== undefined) ? roomData.playerHealths[p2] : 5000;
 
         if (playerScores[p1] > playerScores[p2]) {
             const damage = playerScores[p1] - playerScores[p2];
@@ -324,26 +480,25 @@ function processCombatDamageEvaluation(roomData) {
         updates[`rooms/${currentRoomId}/playerHealths/${p1}`] = currentHp1;
         updates[`rooms/${currentRoomId}/playerHealths/${p2}`] = currentHp2;
 
-        update(ref(db), updates);
+        update(ref(db), updates).catch(err => console.error("Evaluation crash caught: ", err));
     });
 }
 
-// 5. ANIMATED SCOREBOARD AND COMBAT SEQUENCER
 function renderVisualResultsOnly(roomData, guesses) {
     if (resultsLayers.length > 0) return;
 
-    const myGuess = guesses[playerId];
-    const oppId = Object.keys(guesses).find(id => id !== playerId);
-    const enemyGuess = guesses[oppId];
+    const myGuess = guesses ? guesses[playerId] : null;
+    const oppId = roomData.playerHealths.hostId === playerId ? roomData.playerHealths.guestId : roomData.playerHealths.hostId;
+    const enemyGuess = guesses ? guesses[oppId] : null;
 
-    const myDistance = calculateHaversineDistance(myGuess.lat, myGuess.lng, actualCoords.lat, actualCoords.lng);
-    const enemyDistance = enemyGuess ? calculateHaversineDistance(enemyGuess.lat, enemyGuess.lng, actualCoords.lat, actualCoords.lng) : 20037;
+    const myDistance = (!myGuess || myGuess.isTimedOut) ? 20037 : calculateHaversineDistance(myGuess.lat, myGuess.lng, actualCoords.lat, actualCoords.lng);
+    const enemyDistance = (!enemyGuess || enemyGuess.isTimedOut) ? 20037 : calculateHaversineDistance(enemyGuess.lat, enemyGuess.lng, actualCoords.lat, actualCoords.lng);
 
-    const myScore = computeGeoGuessrScore(myDistance);
-    const enemyScore = enemyGuess ? computeGeoGuessrScore(enemyDistance) : 0;
+    const myScore = (!myGuess || myGuess.isTimedOut) ? 0 : computeGeoGuessrScore(myDistance);
+    const enemyScore = (!enemyGuess || enemyGuess.isTimedOut) ? 0 : computeGeoGuessrScore(enemyDistance);
 
-    const finalMyHp = roomData.playerHealths[playerId] !== undefined ? roomData.playerHealths[playerId] : 5000;
-    const finalEnemyHp = (oppId && roomData.playerHealths[oppId] !== undefined) ? roomData.playerHealths[oppId] : 5000;
+    const finalMyHp = (roomData.playerHealths && roomData.playerHealths[playerId] !== undefined) ? roomData.playerHealths[playerId] : 5000;
+    const finalEnemyHp = (roomData.playerHealths && oppId && roomData.playerHealths[oppId] !== undefined) ? roomData.playerHealths[oppId] : 5000;
 
     const netDamage = Math.abs(myScore - enemyScore);
     let startMyHp = finalMyHp;
@@ -363,23 +518,19 @@ function renderVisualResultsOnly(roomData, guesses) {
     document.getElementById('card-my-hp-running').innerText = `HP: ${startMyHp}`;
     document.getElementById('card-enemy-hp-running').innerText = `HP: ${startEnemyHp}`;
 
-    document.getElementById('card-my-dist').innerText = `${Math.round(myDistance)} km away`;
-    document.getElementById('card-enemy-dist').innerText = enemyGuess ? `${Math.round(enemyDistance)} km away` : "No guess";
-    
-    document.getElementById('combat-narrative').innerText = "Calculating accuracy tracks...";
+    document.getElementById('card-my-dist').innerText = (!myGuess || myGuess.isTimedOut) ? "No Guess" : `${Math.round(myDistance)} km away`;
+    document.getElementById('card-enemy-dist').innerText = (!enemyGuess || enemyGuess.isTimedOut) ? "No Guess" : `${Math.round(enemyDistance)} km away`;
 
     let currentTick = 0;
-    const tickDuration = 60; 
+    const tickDuration = 40; 
     const interval = setInterval(() => {
         currentTick++;
         const ratio = currentTick / tickDuration;
-        
         document.getElementById('card-my-score').innerText = Math.round(myScore * ratio);
         document.getElementById('card-enemy-score').innerText = Math.round(enemyScore * ratio);
 
         if (currentTick >= tickDuration) {
             clearInterval(interval);
-            // FIXED REDIRECT: Health parameters pass straight down into the sequencer
             triggerLaserProjectileCombatAnimation(myScore, enemyScore, startMyHp, finalMyHp, startEnemyHp, finalEnemyHp);
         }
     }, 25);
@@ -389,40 +540,36 @@ function renderVisualResultsOnly(roomData, guesses) {
     }).addTo(map).bindPopup("<b>Target Location</b>");
     resultsLayers.push(trueMarker);
 
-    let summaryText = "Round Over! Combats: ";
+    if (guesses) {
+        Object.keys(guesses).forEach(pId => {
+            const pGuess = guesses[pId];
+            if (!pGuess || pGuess.isTimedOut) return; 
 
-    Object.keys(guesses).forEach(pId => {
-        const pGuess = guesses[pId];
-        const distance = calculateHaversineDistance(pGuess.lat, pGuess.lng, actualCoords.lat, actualCoords.lng);
-        const score = computeGeoGuessrScore(distance);
+            const distance = calculateHaversineDistance(pGuess.lat, pGuess.lng, actualCoords.lat, actualCoords.lng);
+            const isMe = pId === playerId;
+            const color = isMe ? '#00e676' : '#29b6f6'; 
 
-        const isMe = pId === playerId;
-        const color = isMe ? '#00e676' : '#29b6f6'; 
+            const guessPin = L.circleMarker([pGuess.lat, pGuess.lng], {
+                radius: 9, fillColor: color, color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.8
+            }).addTo(map).bindPopup(`<b>${isMe ? 'Your' : "Opponent's"} Guess</b><br>${Math.round(distance)} km away`);
+            resultsLayers.push(guessPin);
 
-        const guessPin = L.circleMarker([pGuess.lat, pGuess.lng], {
-            radius: 9, fillColor: color, color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.8
-        }).addTo(map).bindPopup(`<b>${isMe ? 'Your' : "Opponent's"} Guess</b><br>${Math.round(distance)} km away`);
-        resultsLayers.push(guessPin);
+            const line = L.polyline([[pGuess.lat, pGuess.lng], [actualCoords.lat, actualCoords.lng]], {
+                color: color, weight: 4, dashArray: '5, 10'
+            }).addTo(map);
+            resultsLayers.push(line);
+        });
+    }
 
-        const line = L.polyline([[pGuess.lat, pGuess.lng], [actualCoords.lat, actualCoords.lng]], {
-            color: color, weight: 4, dashArray: '5, 10'
-        }).addTo(map);
-        resultsLayers.push(line);
-
-        summaryText += `${isMe ? 'You' : 'Opponent'}: ${score} pts (${Math.round(distance)}km) | `;
-    });
-
-    document.getElementById('status-msg').innerText = summaryText;
     trueMarker.openPopup();
 
-    // Only allow the "Next Round" button to mount if BOTH players have surviving health points remaining
     if (isHost && finalMyHp > 0 && finalEnemyHp > 0) {
         let nextRoundBtn = document.getElementById('btn-next-round');
         if (!nextRoundBtn) {
             nextRoundBtn = document.createElement('button');
             nextRoundBtn.id = 'btn-next-round';
             nextRoundBtn.innerText = "Next Round";
-            nextRoundBtn.style.cssText = "position:absolute; top:15px; right:15px; z-index:100; padding:12px 24px; background:#007bff; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; box-shadow:0 4px 15px rgba(0,0,0,0.3);";
+            nextRoundBtn.className = "global-next-round-btn";
             nextRoundBtn.onclick = window.startNextRound;
             document.getElementById('streetview-container').appendChild(nextRoundBtn);
         }
@@ -430,18 +577,16 @@ function renderVisualResultsOnly(roomData, guesses) {
     }
 }
 
-// E. Kinetic Projectile Combat Animation Controller (NOW HANDLES CINEMATIC FINISHING BLOWS)
 function triggerLaserProjectileCombatAnimation(myScore, enemyScore, startMyHp, finalMyHp, startEnemyHp, finalEnemyHp) {
     const projectile = document.getElementById('damage-projectile');
     const narrative = document.getElementById('combat-narrative');
     
-    const myCard = document.querySelector('.my-lane');
-    const enemyCard = document.querySelector('.enemy-lane');
-
+    const myCard = document.querySelector('.lane.my-lane');
+    const enemyCard = document.querySelector('.lane.enemy-lane');
     const netDamage = Math.abs(myScore - enemyScore);
 
     if (netDamage === 0) {
-        narrative.innerText = "💥 PERFECT TIE! Absolute gridlock blocks all structural damage.";
+        narrative.innerText = "💥 PERFECT TIE! Structural grids locked.";
         setTimeout(() => dismissScorecardOverlayScreen(), 2500);
         return;
     }
@@ -451,132 +596,87 @@ function triggerLaserProjectileCombatAnimation(myScore, enemyScore, startMyHp, f
     projectile.style.display = 'block';
 
     if (myScore > enemyScore) {
-        // Checking if this specific blow completely finishes the match
         const isFinishingBlow = finalEnemyHp <= 0;
-        narrative.innerHTML = isFinishingBlow ? 
-            `<span style="color:#ff1744; font-size:1.4rem; font-weight:900; animation:spin 0.5s infinite;">☠️ FINISHING BLOW!</span> Pounding enemy with ${netDamage} FATAL points!` : 
-            `🔥 ACCURACY ADVANTAGE! Launching ${netDamage} damage points at enemy!`;
-            
-        projectile.style.animation = 'fireRight 0.8s ease-in-out forwards';
+        narrative.innerHTML = isFinishingBlow ? `<span style="color:#ff1744; font-weight:900;">☠️ FINISHING BLOW!</span>` : `🔥 ADVANTAGE! Striking enemy for ${netDamage}!`;
+        projectile.style.animation = 'fireRight 0.6s ease-in-out forwards';
         
         setTimeout(() => {
             projectile.style.display = 'none';
-            enemyCard.classList.add('hurt-shake');
-            narrative.innerText = isFinishingBlow ? "💥 FATALITY! Enemy health has been completely vaporized!" : `💥 BOOM! Enemy health pool lost ${netDamage} HP!`;
+            if (enemyCard) enemyCard.classList.add('hurt-shake');
             
             const enemyPop = document.getElementById('enemy-damage-pop');
             enemyPop.innerText = `-${netDamage} HP`;
             enemyPop.classList.add('animate-damage-pop');
 
-            let hpTick = 0;
-            const hpSteps = 40;
-            const hpInterval = setInterval(() => {
-                hpTick++;
-                const ratio = hpTick / hpSteps;
-                const currentTickHp = Math.round(startEnemyHp - (netDamage * ratio));
-                document.getElementById('card-enemy-hp-running').innerText = `HP: ${Math.max(finalEnemyHp, currentTickHp)}`;
-                
-                if (hpTick >= hpSteps) { clearInterval(hpInterval); }
-            }, 20);
-
-            document.getElementById('enemy-hp-text').innerText = `${finalEnemyHp} / 5000`;
-            document.getElementById('enemy-hp-bar').style.width = `${(finalEnemyHp / 5000) * 100}%`;
+            document.getElementById('card-enemy-hp-running').innerText = `HP: ${finalEnemyHp}`;
+            
+            const enemyHpTxt = document.getElementById('enemy-hp-text');
+            const enemyHpBar = document.getElementById('enemy-hp-bar');
+            if (enemyHpTxt) enemyHpTxt.innerText = `${finalEnemyHp} / 5000`;
+            if (enemyHpBar) enemyHpBar.style.width = `${(finalEnemyHp / 5000) * 100}%`;
 
             setTimeout(() => {
-                enemyCard.classList.remove('hurt-shake');
-                if (isFinishingBlow) {
-                    triggerFinalMatchOverOverlayScreen(true); // You won!
-                } else {
-                    dismissScorecardOverlayScreen();
-                }
+                if (enemyCard) enemyCard.classList.remove('hurt-shake');
+                if (isFinishingBlow) triggerFinalMatchOverOverlayScreen(true);
+                else dismissScorecardOverlayScreen();
             }, 1200);
-        }, 800);
+        }, 600);
     } else {
         const isFinishingBlow = finalMyHp <= 0;
-        narrative.innerHTML = isFinishingBlow ? 
-            `<span style="color:#ff1744; font-size:1.4rem; font-weight:900;">🚨 CRITICAL FINISHER!</span> Defensive barrier collapsing, taking ${netDamage} fatal points!` : 
-            `⚠️ INCOMING ASSAULT! Taking ${netDamage} impact damage points!`;
-            
-        projectile.style.animation = 'fireLeft 0.8s ease-in-out forwards';
+        narrative.innerHTML = isFinishingBlow ? `<span style="color:#ff1744; font-weight:900;">🚨 CRITICAL COLLAPSE!</span>` : `⚠️ IMPACT! Defensive barriers hit for ${netDamage}!`;
+        projectile.style.animation = 'fireLeft 0.6s ease-in-out forwards';
         
         setTimeout(() => {
             projectile.style.display = 'none';
-            myCard.classList.add('hurt-shake');
-            narrative.innerText = isFinishingBlow ? "💥 WIPEOUT! Your map HP dropped down to zero!" : `💥 IMPACT! Your health pool lost ${netDamage} HP!`;
+            if (myCard) myCard.classList.add('hurt-shake');
             
             const myPop = document.getElementById('my-damage-pop');
             myPop.innerText = `-${netDamage} HP`;
             myPop.classList.add('animate-damage-pop');
 
-            let hpTick = 0;
-            const hpSteps = 40;
-            const hpInterval = setInterval(() => {
-                hpTick++;
-                const ratio = hpTick / hpSteps;
-                const currentTickHp = Math.round(startMyHp - (netDamage * ratio));
-                document.getElementById('card-my-hp-running').innerText = `HP: ${Math.max(finalMyHp, currentTickHp)}`;
-                
-                if (hpTick >= hpSteps) { clearInterval(hpInterval); }
-            }, 20);
-
-            document.getElementById('my-hp-text').innerText = `${finalMyHp} / 5000`;
-            document.getElementById('my-hp-bar').style.width = `${(finalMyHp / 5000) * 100}%`;
+            document.getElementById('card-my-hp-running').innerText = `HP: ${finalMyHp}`;
+            
+            const myHpTxt = document.getElementById('my-hp-text');
+            const myHpBar = document.getElementById('my-hp-bar');
+            if (myHpTxt) myHpTxt.innerText = `${finalMyHp} / 5000`;
+            if (myHpBar) myHpBar.style.width = `${(finalMyHp / 5000) * 100}%`;
 
             setTimeout(() => {
-                myCard.classList.remove('hurt-shake');
-                if (isFinishingBlow) {
-                    triggerFinalMatchOverOverlayScreen(false); // You lost!
-                } else {
-                    dismissScorecardOverlayScreen();
-                }
+                if (myCard) myCard.classList.remove('hurt-shake');
+                if (isFinishingBlow) triggerFinalMatchOverOverlayScreen(false);
+                else dismissScorecardOverlayScreen();
             }, 1200);
-        }, 800);
+        }, 600);
     }
 }
 
-// F. SEQUENTIAL MATCH-OVER OVERLAY DISPATCHER
 function triggerFinalMatchOverOverlayScreen(didIWin) {
-    // Fade the face-off scoreboard away gracefully
     const overlayScore = document.getElementById('battle-scorecard-overlay');
-    overlayScore.style.transition = "opacity 0.4s ease";
-    overlayScore.style.opacity = "0";
+    overlayScore.style.display = "none";
+    const mainOverlayMenu = document.getElementById('menu-overlay');
+    mainOverlayMenu.style.opacity = '1';
+    mainOverlayMenu.style.visibility = 'visible';
+    document.getElementById('lobby-waiting-status').style.display = 'none';
     
-    setTimeout(() => {
-        overlayScore.style.display = "none";
-        overlayScore.style.opacity = "1"; // Reset reference container structures cleanly
-
-        // Force launch the primary main menu layout wrapped into your custom win styles
-        const mainOverlayMenu = document.getElementById('menu-overlay');
-        mainOverlayMenu.style.opacity = '1';
-        mainOverlayMenu.style.visibility = 'visible';
-        document.getElementById('lobby-waiting-status').style.display = 'none';
-        
-        const titleNode = document.querySelector('#menu-overlay h1');
-        const subNode = document.querySelector('.menu-subtitle');
-        
-        if (didIWin) {
-            titleNode.innerHTML = "🏆 MATCH VICTORY!";
-            subNode.innerHTML = `<span style="color:#00e676; font-size:1.2rem; font-weight:bold;">KNOCKOUT!</span> You systematically drained your enemy's HP bar to absolute zero!`;
-        } else {
-            titleNode.innerHTML = "💀 MATCH DEFEAT";
-            subNode.innerHTML = `<span style="color:#ff1744; font-size:1.2rem; font-weight:bold;">ELIMINATED!</span> Your health bar flatlined. Re-host a room to take revenge!`;
-        }
-    }, 400);
+    const titleNode = document.querySelector('#menu-overlay h1');
+    const subNode = document.querySelector('.menu-subtitle');
+    
+    if (didIWin) {
+        titleNode.innerHTML = "🏆 MATCH VICTORY!";
+        subNode.innerHTML = `<span style="color:#00e676; font-weight:bold;">KNOCKOUT!</span> Target neutralized.`;
+    } else {
+        titleNode.innerHTML = "💀 MATCH DEFEAT";
+        subNode.innerHTML = `<span style="color:#ff1744; font-weight:bold;">ELIMINATED!</span> Barriers flattened.`;
+    }
 }
 
 function dismissScorecardOverlayScreen() {
     setTimeout(() => {
         const overlay = document.getElementById('battle-scorecard-overlay');
-        overlay.style.transition = "opacity 0.4s ease";
-        overlay.style.opacity = "0";
-        setTimeout(() => {
-            overlay.style.display = "none";
-            overlay.style.opacity = "1"; 
-        }, 400);
+        overlay.style.display = "none";
     }, 1500);
 }
 
-// Distance Calculation Helpers
 function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
     const R = 6371; 
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -587,35 +687,36 @@ function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
     return R * c; 
 }
 
-// Score Calculation
 function computeGeoGuessrScore(distanceInKm) {
-    const maxScore = 5000;
-    const scalingFactor = 2000; 
-    const score = maxScore * Math.exp(-distanceInKm / scalingFactor);
+    const score = 5000 * Math.exp(-distanceInKm / 2000);
     return Math.max(0, Math.round(score));
 }
 
-// 6. START NEXT ROUND
 window.startNextRound = function() {
     if (!currentRoomId || !isHost) return;
-    
     const randomIndex = Math.floor(Math.random() * gameLocations.length);
     const nextTarget = gameLocations[randomIndex];
 
-    onValue(ref(db, 'rooms/' + currentRoomId), (snapshot) => {
-        const data = snapshot.val();
-        if (!data) return;
+    const updates = {};
+    updates[`rooms/${currentRoomId}/targetLocation`] = nextTarget;
+    updates[`rooms/${currentRoomId}/guesses`] = {}; 
+    updates[`rooms/${currentRoomId}/skipVotes`] = {}; 
+    updates[`rooms/${currentRoomId}/panicTriggered`] = false;
+    updates[`rooms/${currentRoomId}/timerStartTime`] = serverTimestamp();
+    updates[`rooms/${currentRoomId}/timerDuration`] = 60;
+    updates[`rooms/${currentRoomId}/gameState`] = "playing";
 
-        const updates = {};
-        updates[`rooms/${currentRoomId}/targetLocation`] = nextTarget;
-        updates[`rooms/${currentRoomId}/guesses`] = {}; 
-        updates[`rooms/${currentRoomId}/skipVotes`] = {}; 
-        updates[`rooms/${currentRoomId}/gameState`] = "playing";
-
-        update(ref(db), updates).catch(err => {
-            console.error("Round Reset Transaction Failed:", err);
-        });
-    }, { onlyOnce: true });
+    update(ref(db), updates).catch(err => console.error(err));
 };
+
+window.toggleMobileMapDrawer = function() {
+    const container = document.getElementById('map-container');
+    if(container.classList.contains('mobile-expanded')) {
+        container.classList.remove('mobile-expanded');
+    } else {
+        container.classList.add('mobile-expanded');
+    }
+    setTimeout(() => { if(map) map.invalidateSize(); }, 300);
+}
 
 window.onload = initMap;
